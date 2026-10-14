@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>发票打印助手 - 下载与使用</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Microsoft YaHei UI", "PingFang SC", -apple-system, sans-serif;
+    background: #f0f2f5; color: #333; min-height: 100vh;
+  }
+  .hero {
+    background: linear-gradient(135deg, #1677ff 0%, #0958d9 100%);
+    color: #fff; padding: 32px 20px 28px; text-align: center;
+  }
+  .hero h1 { font-size: 24px; margin-bottom: 6px; }
+  .hero p { opacity: .9; font-size: 14px; }
+  .ver-badge {
+    display: inline-block; margin-top: 10px; background: rgba(255,255,255,.2);
+    padding: 3px 14px; border-radius: 20px; font-size: 13px;
+  }
+  .wrap { max-width: 680px; margin: -16px auto 40px; padding: 0 14px; }
+  .card {
+    background: #fff; border-radius: 12px; padding: 20px;
+    margin-bottom: 14px; box-shadow: 0 2px 8px rgba(0,0,0,.06);
+  }
+  .card h2 { font-size: 16px; margin-bottom: 12px; color: #0958d9; }
+  .btn {
+    display: block; text-align: center; text-decoration: none;
+    background: #1677ff; color: #fff; font-size: 16px; font-weight: 600;
+    padding: 13px; border-radius: 8px; margin-bottom: 10px;
+  }
+  .btn:active { opacity: .85; }
+  .btn.sec { background: #e6f4ff; color: #0958d9; font-size: 15px; }
+  .btn.sec::after { content: " ↓"; }
+  .hint { font-size: 12px; color: #999; line-height: 1.7; }
+  ol.steps { padding-left: 20px; line-height: 2; font-size: 14px; }
+  details {
+    border-bottom: 1px solid #f0f0f0; padding: 10px 0; font-size: 14px;
+  }
+  details:last-child { border-bottom: none; }
+  summary { cursor: pointer; font-weight: 600; color: #333; }
+  details p { margin-top: 8px; color: #666; line-height: 1.8; font-size: 13px; }
+  .banner {
+    background: #fff7e6; border: 1px solid #ffd591; color: #ad6800;
+    border-radius: 8px; padding: 10px 14px; font-size: 13px;
+    margin-bottom: 14px; display: none;
+  }
+  .update-list { font-size: 13px; color: #666; line-height: 1.9; }
+  .update-list li { margin-left: 18px; }
+  footer { text-align: center; color: #bbb; font-size: 12px; padding: 0 0 30px; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>🧾 发票打印助手</h1>
+  <p>报销发票/凭证 批量提取 · 自动拼版 · 直送打印机</p>
+  <span class="ver-badge" id="verBadge">版本 v2.5</span>
+</div>
+
+<div class="wrap">
+
+  <div class="banner" id="mobileBanner">
+    📱 检测到您在手机端打开。打印功能需要在<b>电脑端</b>使用——请将本页面在
+    <b>电脑端钉钉</b>（或电脑浏览器）中打开后再下载。
+  </div>
+
+  <div class="card">
+    <h2>⬇️ 下载安装（电脑端）</h2>
+    <a class="btn" id="dlExe" href="fapiao-assistant.exe" download="发票打印助手.exe">下载发票打印助手 v2.5</a>
+    <p class="hint">
+      • 免安装绿色版：下载后<b>双击即可运行</b>，无需安装 Python 或其他环境<br>
+      • 建议保存到 <b>D:\Tools\发票打印助手\</b> 等固定目录，方便日后更新
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>📋 备用金报销模版</h2>
+    <a class="btn sec" href="template.xlsx" download="备用金报销模版.xlsx">下载备用金报销模版.xlsx</a>
+    <p class="hint">按模板填写报销明细，发票图片直接粘贴在「发票详情」列内即可被自动识别。</p>
+  </div>
+
+  <div class="card">
+    <h2>🚀 使用三步曲</h2>
+    <ol class="steps">
+      <li><b>导入</b>：打开软件，把报销 Excel <b>直接拖进窗口</b>（或点导入按钮）</li>
+      <li><b>勾选排版</b>：鼠标悬停可预览大图，点行勾选要打印的条目，选单面/双面和每页张数</li>
+      <li><b>打印</b>：点「开始打印」直送打印机；或先「导出 PDF」核对后再打</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>❓ 常见问题</h2>
+    <details>
+      <summary>打印机列表是空的？</summary>
+      <p>点「刷新」重试；若仍为空，把程序目录生成的《打印机诊断日志.txt》发给管理员。</p>
+    </details>
+    <details>
+      <summary>识别不到购买方 / 显示「开票主体读取失败」？</summary>
+      <p>统一模板要求：有发票时，发票图片要<b>粘贴在「发票详情」列内</b>（写"无"则不留图）。
+      只有支付截图没有发票图的行会标记为「开票主体读取失败」，请补发票后重新导入。</p>
+    </details>
+    <details>
+      <summary>不同购买方的发票会打在一张纸上吗？</summary>
+      <p>不会。软件自动按购买方隔离分纸（正反面也算同一张），不同主体的发票绝不混打；
+      非发票图片会自动填补空位，不浪费纸。</p>
+    </details>
+    <details>
+      <summary>双面打印没生效？</summary>
+      <p>打印完成后如弹出「打印机未接受双面设置」提示，请到打印机首选项里确认已开启双面单元。</p>
+    </details>
+    <details>
+      <summary>黑白打印是什么原理？</summary>
+      <p>发送前自动转为灰度（图片清晰、文字不变），彩色打印机也不会消耗彩墨。</p>
+    </details>
+    <details>
+      <summary>.xls 老格式打不开？</summary>
+      <p>软件会自动调用本机 Excel/WPS 转换；若两者都没装，请先另存为 .xlsx。</p>
+    </details>
+    <details>
+      <summary>杀毒软件提示风险？</summary>
+      <p>打包方式导致的常见误报，选择「仍要运行」并加入信任即可。</p>
+    </details>
+  </div>
+
+  <div class="card">
+    <h2>🆕 本次更新内容</h2>
+    <ul class="update-list" id="updateList">
+      <li>统一模板规则：发票详情列粘发票即自动识别（详见常见问题）</li>
+      <li>购买方自动隔离分纸</li>
+      <li>打印对齐修复、大图查看优化</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>🛠 遇到问题？</h2>
+    <p class="hint" style="font-size:13px">
+      1. 程序目录下如有《打印机诊断日志.txt》，直接发给管理员；<br>
+      2. 其他问题请截图 + 说明操作步骤，联系管理员处理。
+    </p>
+  </div>
+
+</div>
+
+<footer>发票打印助手 · 内部工具 · 由 IT 部门统一分发</footer>
+
+<script>
+  var CURRENT = '2.5';
+
+  // 手机端提示
+  if (/Mobile|Android|iPhone/i.test(navigator.userAgent)) {
+    document.getElementById('mobileBanner').style.display = 'block';
+  }
+
+  // 读取 version.json 显示最新版本与更新说明(部署后自动生效)
+  fetch('version.json', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (v) {
+    document.getElementById('verBadge').textContent = '最新版本 v' + v.version + '（' + v.build + '）';
+    document.getElementById('dlExe').textContent = '下载发票打印助手 v' + v.version;
+    if (v.notes && v.notes.length) {
+      var ul = document.getElementById('updateList');
+      ul.innerHTML = '';
+      v.notes.forEach(function (n) {
+        var li = document.createElement('li');
+        li.textContent = n;
+        ul.appendChild(li);
+      });
+    }
+  }).catch(function () { /* 无 version.json 时使用页面内置信息 */ });
+</script>
+
+</body>
+</html>
