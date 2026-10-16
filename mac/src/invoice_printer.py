@@ -123,7 +123,7 @@ def _clipboard_files():
     return out
 
 APP_TITLE = '发票打印助手'
-APP_VERSION = 'v3.8'
+APP_VERSION = 'v3.9'
 PRINT_DPI = 300    # 送打印机时页面渲染精度
 PDF_DPI = 200      # 导出 PDF 的精度(体积/清晰度折中)
 PREVIEW_DPI = 60   # 预览窗口精度
@@ -936,6 +936,8 @@ def plan_pages(items, opts):
     slots_page = _LAYOUT_SLOTS[opts['layout']]
     duplex = opts.get('side', '单面') == '双面'
     pw, ph = PAPERS_MM[opts['paper']]
+    if opts.get('direction', '纵向') == '横向':
+        pw, ph = ph, pw
     W, H = mm2px(pw, 72), mm2px(ph, 72)
     m = mm2px(opts['margin'], 72)
     g = mm2px(opts['gap'], 72)
@@ -963,9 +965,12 @@ def plan_pages(items, opts):
 
 
 def render_page(plan, opts, dpi):
-    """渲染一页: 图片等比缩放居中放入各自格子, 可选分隔线和订单号标签"""
+    """渲染一页: 图片等比缩放居中放入各自格子, 可选分隔线和订单号标签。
+    支持纸张方向(纵向/横向)与智能旋转(图片横竖两种放法取利用率高者)"""
     r, c, chunk = plan
     pw, ph = PAPERS_MM[opts['paper']]
+    if opts.get('direction', '纵向') == '横向':
+        pw, ph = ph, pw
     W, H = mm2px(pw, dpi), mm2px(ph, dpi)
     m = mm2px(opts['margin'], dpi)
     g = mm2px(opts['gap'], dpi)
@@ -999,6 +1004,12 @@ def render_page(plan, opts, dpi):
             continue
         im = it.pil
         scale = min(iw / im.width, ih / im.height)
+        # 智能旋转: 横竖两种放法各算一次利用率, 明显更高才转 90°
+        if opts.get('autorotate', True) and im.width != im.height:
+            s_rot = min(iw / im.height, ih / im.width)
+            if s_rot > scale * 1.02:
+                im = im.transpose(Image.ROTATE_90)
+                scale = s_rot
         nw, nh = max(1, int(im.width * scale)), max(1, int(im.height * scale))
         im2 = im.resize((nw, nh), Image.Resampling.LANCZOS)
         px = int(x0 + (iw - nw) / 2)
@@ -1038,7 +1049,7 @@ def _write_printer_diag(diag):
 
 
 # ---------------- winspool/GDI 常量与结构(纯 ctypes, 取代 pywin32) ----------------
-DMORIENT_PORTRAIT = 1
+DMORIENT_PORTRAIT, DMORIENT_LANDSCAPE = 1, 2
 DMDUP_SIMPLEX, DMDUP_VERTICAL = 1, 2
 DMCOLOR_MONOCHROME, DMCOLOR_COLOR = 1, 2
 DM_ORIENTATION, DM_DUPLEX, DM_COLOR = 0x0001, 0x1000, 0x0800
@@ -1474,7 +1485,9 @@ def gdi_print(plans, opts, printer, duplex, copies, progress=None, color=None,
                            '名称正确且本机有使用权限。' % printer)
     try:
         buf, dm = _devmode_buf(printer, hprinter)
-        dm.u._shorts[0] = DMORIENT_PORTRAIT   # dmOrientation 在联合体里
+        dm.u._shorts[0] = (DMORIENT_LANDSCAPE
+                           if opts.get('direction', '纵向') == '横向'
+                           else DMORIENT_PORTRAIT)   # dmOrientation 在联合体里
         dm.dmFields |= DM_ORIENTATION
         dm.dmDuplex = (DMDUP_VERTICAL if duplex else DMDUP_SIMPLEX)
         dm.dmFields |= DM_DUPLEX
@@ -1697,6 +1710,8 @@ class App:
         self.layout_var = tk.StringVar(value='half')
         self.arr_var = tk.StringVar(value='自动')
         self.paper_var = tk.StringVar(value='A4')
+        self.direction_var = tk.StringVar(value='纵向')
+        self.rotate_var = tk.BooleanVar(value=True)
         self.margin_var = tk.IntVar(value=5)
         self.gap_var = tk.IntVar(value=5)
         self.sep_var = tk.BooleanVar(value=True)
@@ -1814,6 +1829,11 @@ class App:
             ttk.Radiobutton(row1, text=text, value=v, variable=self.layout_var,
                             command=self.refresh_summary).pack(
                 side='left', padx=(6, 2))
+        ttk.Label(row1, text='   纸张方向:').pack(side='left')
+        for v in ('纵向', '横向'):
+            ttk.Radiobutton(row1, text=v, value=v, variable=self.direction_var,
+                            command=self.refresh_summary).pack(
+                side='left', padx=(6, 2))
 
         row2 = ttk.Frame(sf)
         row2.pack(fill='x', padx=6, pady=3)
@@ -1840,6 +1860,9 @@ class App:
                         command=self.refresh_summary).pack(side='left')
         ttk.Checkbutton(row3, text='打印信息标签(名称/用途/金额/发票)',
                         variable=self.label_var,
+                        command=self.refresh_summary).pack(side='left', padx=12)
+        ttk.Checkbutton(row3, text='自动旋转图片(横放更省纸)',
+                        variable=self.rotate_var,
                         command=self.refresh_summary).pack(side='left', padx=12)
         ttk.Label(row3, text='份数:').pack(side='left')
         ttk.Spinbox(row3, textvariable=self.copies_var, from_=1, to=99,
@@ -2688,7 +2711,9 @@ class App:
         return dict(layout=self.layout_var.get(), arrangement=self.arr_var.get(),
                     paper=self.paper_var.get(), margin=int(self.margin_var.get()),
                     gap=int(self.gap_var.get()), sep=self.sep_var.get(),
-                    label=self.label_var.get(), side=self.side_var.get())
+                    label=self.label_var.get(), side=self.side_var.get(),
+                    direction=self.direction_var.get(),
+                    autorotate=bool(self.rotate_var.get()))
 
     # ---------------- 设置记忆
 
@@ -2716,6 +2741,8 @@ class App:
         put(self.copies_var, 'copies', int)
         put(self.color_var, 'color')
         put(self.printer_var, 'printer')
+        put(self.direction_var, 'direction')
+        put(self.rotate_var, 'autorotate', bool)
         g = s.get('geometry')
         if g and 'x' in g:
             self.root.geometry(g)
@@ -2731,6 +2758,8 @@ class App:
                      copies=int(self.copies_var.get()),
                      color=self.color_var.get(),
                      printer=self.printer_var.get(),
+                     direction=self.direction_var.get(),
+                     autorotate=bool(self.rotate_var.get()),
                      geometry=self.root.winfo_geometry())
             with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
                 json.dump(s, f, ensure_ascii=False, indent=1)
