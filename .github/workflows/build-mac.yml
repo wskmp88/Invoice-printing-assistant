@@ -2,8 +2,6 @@ name: build-mac
 
 on:
   workflow_dispatch: {}
-  push:
-    paths: ['mac/**']
 
 permissions:
   contents: write
