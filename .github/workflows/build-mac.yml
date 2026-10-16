@@ -38,7 +38,7 @@ jobs:
           ditto -c -k --keepParent "dist/发票打印助手.app" "发票打印助手-mac.app.zip"
           ls -la
 
-      - name: 发布到 Release (tag: mac-latest)
+      - name: "发布到 Release (tag: mac-latest)"
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
