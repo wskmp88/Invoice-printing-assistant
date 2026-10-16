@@ -58,7 +58,7 @@
 <div class="hero">
   <h1>🧾 发票打印助手</h1>
   <p>报销发票/凭证 批量提取 · 自动拼版 · 直送打印机</p>
-  <span class="ver-badge" id="verBadge">版本 v3.5</span>
+  <span class="ver-badge" id="verBadge">版本 v3.6</span>
 </div>
 
 <div class="wrap">
@@ -70,7 +70,7 @@
 
   <div class="card">
     <h2>⬇️ 下载安装（电脑端）</h2>
-    <a class="btn" id="dlExe" href="fapiao-assistant.exe" download="发票打印助手.exe">下载发票打印助手 v3.5</a>
+    <a class="btn" id="dlExe" href="fapiao-assistant.exe" download="发票打印助手.exe">下载发票打印助手 v3.6</a>
     <p class="hint">
       • 免安装绿色版：下载后<b>双击即可运行</b>，无需安装 Python 或其他环境<br>
       • 建议保存到 <b>D:\Tools\发票打印助手\</b> 等固定目录，方便日后更新
@@ -144,9 +144,9 @@
   <div class="card">
     <h2>🆕 本次更新内容</h2>
     <ul class="update-list" id="updateList">
-      <li>修复 Ctrl+V 粘贴导入在部分电脑无效的问题</li>
-      <li>支持拖入整个文件夹（含子文件夹全量导入）</li>
-      <li>拖拽/混合导入全面修复，新增图文使用手册</li>
+      <li>修复部分电脑「开始打印」按钮变灰的问题</li>
+      <li>打印改用系统原生接口，兼容性大幅提升</li>
+      <li>附图文使用手册（网页/PDF/长图三版）</li>
     </ul>
   </div>
 
@@ -163,7 +163,7 @@
 <footer>发票打印助手 · 内部工具 · 由 IT 部门统一分发</footer>
 
 <script>
-  var CURRENT = '3.5';
+  var CURRENT = '3.6';
 
   // 手机端提示
   if (/Mobile|Android|iPhone/i.test(navigator.userAgent)) {
