@@ -123,7 +123,7 @@ def _clipboard_files():
     return out
 
 APP_TITLE = '发票打印助手'
-APP_VERSION = 'v3.7'
+APP_VERSION = 'v3.8'
 PRINT_DPI = 300    # 送打印机时页面渲染精度
 PDF_DPI = 200      # 导出 PDF 的精度(体积/清晰度折中)
 PREVIEW_DPI = 60   # 预览窗口精度
@@ -869,6 +869,13 @@ def page_grid(layout, arrangement, chunk=None, W=0, H=0, m=0, g=0):
 _LAYOUT_SLOTS = {'full': 1, 'half': 2, 'quarter': 4, 'eighth': 8}
 
 
+def _dzfp_filename_buyer(filename):
+    """电子发票下载文件名自带购买方: dzfp_发票号_购买方名称_日期时间.pdf
+    OCR 读不出时的兜底来源(仅识别 dzfp 命名规范, 避免误判)"""
+    m = re.match(r'^dzfp_\d+_(.+?)_\d{14}', filename or '')
+    return m.group(1) if m else ''
+
+
 def plan_sheets(items, opts):
     """把图片分配到纸张(仅在“存在不同购买方的发票”的隔离模式下调用):
     - 发票(有购买方): 同购买方尽量同纸; 不同购买方严格不同纸
@@ -886,15 +893,27 @@ def plan_sheets(items, opts):
         sheets.append(s)
         return s
 
+    unknown = []                        # 读不出购买方的发票: 每张独立成纸
     for it in items:                    # 1) 发票先落位(保持原顺序)
-        if not it.is_invoice or not it.buyer:
+        if not it.is_invoice:
             continue
+        if not it.buyer:
+            # OCR 未完成/失败: 先试文件名兜底; 仍没有则独立成纸,
+            # 绝不静默丢弃(曾经因此导致排版预览少一张发票)
+            it.buyer = _dzfp_filename_buyer(it.filename)
+            if not it.buyer:
+                unknown.append(it)
+                continue
         s = by_buyer.get(it.buyer)
         if s is not None and len(s['items']) >= slots_sheet:
             s = None                    # 该购买方的纸满了 → 另开一张
         if s is None:
             s = new_sheet(orig_idx[id(it)])
             by_buyer[it.buyer] = s
+        s['items'].append(it)
+
+    for it in unknown:                  # 未知购买方发票: 独占纸张(保守隔离)
+        s = new_sheet(orig_idx[id(it)])
         s['items'].append(it)
 
     for it in items:                    # 2) 其余图片填空(优先就近)
@@ -2433,6 +2452,12 @@ class App:
                     break
             if disabled:
                 break
+            if not buyer:
+                # 兜底: 电子发票下载文件名自带购买方(dzfp_号码_购买方_日期时间)
+                for it in (inv_items or chunk[:1]):
+                    buyer = _dzfp_filename_buyer(it.filename)
+                    if buyer:
+                        break
             if not buyer:
                 buyer = OCR_FAIL       # 有发票但读不出开票主体
             for it in (inv_items or chunk[:1]):
