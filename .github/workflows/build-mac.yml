@@ -1,0 +1,52 @@
+name: build-mac
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths: ['mac/**']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pillow openpyxl pypdfium2 pillow-heif tkinterdnd2 pyinstaller
+
+      - name: 打包 .app
+        run: |
+          cd mac
+          python -m PyInstaller --noconfirm --windowed --clean \
+            --name "发票打印助手" \
+            --add-data "src/备用金报销模版.xlsx:." \
+            src/invoice_printer.py
+
+      - name: 制作 DMG 与 ZIP
+        run: |
+          cd mac
+          hdiutil create -volname "发票打印助手" -srcfolder "dist/发票打印助手.app" -ov -format UDZO "发票打印助手-mac.dmg"
+          ditto -c -k --keepParent "dist/发票打印助手.app" "发票打印助手-mac.app.zip"
+          ls -la
+
+      - name: 发布到 Release (tag: mac-latest)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd mac
+          gh release delete mac-latest --yes 2>/dev/null || true
+          git push origin :refs/tags/mac-latest 2>/dev/null || true
+          gh release create mac-latest \
+            "发票打印助手-mac.dmg" \
+            "发票打印助手-mac.app.zip" \
+            --title "发票打印助手 macOS 版 (自动构建)" \
+            --notes "下载 DMG 后把 App 拖入 Applications。首次打开如提示无法验证开发者: 在 Finder 里右键 App 点「打开」, 或在终端执行: xattr -cr /Applications/发票打印助手.app"
