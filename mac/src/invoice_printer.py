@@ -123,7 +123,7 @@ def _clipboard_files():
     return out
 
 APP_TITLE = '发票打印助手'
-APP_VERSION = 'v3.9'
+APP_VERSION = 'v4.0'
 PRINT_DPI = 300    # 送打印机时页面渲染精度
 PDF_DPI = 200      # 导出 PDF 的精度(体积/清晰度折中)
 PREVIEW_DPI = 60   # 预览窗口精度
@@ -747,6 +747,7 @@ class ImageItem:
     is_invoice: bool = False  # 图片是否位于“发票详情”列(即发票本身)
     pil: Image.Image = None
     selected: bool = False  # 导入后默认全不选, 由用户勾选
+    user_rot: int = 0       # 用户在排版预览里手动旋转的角度(0/90/180/270, 顺时针)
 
     @property
     def width(self):
@@ -1003,13 +1004,21 @@ def render_page(plan, opts, dpi):
         if iw <= 2 or ih <= 2:
             continue
         im = it.pil
-        scale = min(iw / im.width, ih / im.height)
-        # 智能旋转: 横竖两种放法各算一次利用率, 明显更高才转 90°
-        if opts.get('autorotate', True) and im.width != im.height:
-            s_rot = min(iw / im.height, ih / im.width)
-            if s_rot > scale * 1.02:
-                im = im.transpose(Image.ROTATE_90)
-                scale = s_rot
+        rot = int(getattr(it, 'user_rot', 0) or 0) % 360
+        if rot in (90, 180, 270):
+            # 用户手动旋转优先(顺时针语义), 不再做智能旋转
+            im = im.transpose({90: Image.ROTATE_270,
+                               180: Image.ROTATE_180,
+                               270: Image.ROTATE_90}[rot])
+            scale = min(iw / im.width, ih / im.height)
+        else:
+            scale = min(iw / im.width, ih / im.height)
+            # 智能旋转: 横竖两种放法各算一次利用率, 明显更高才转 90°
+            if opts.get('autorotate', True) and im.width != im.height:
+                s_rot = min(iw / im.height, ih / im.width)
+                if s_rot > scale * 1.02:
+                    im = im.transpose(Image.ROTATE_90)
+                    scale = s_rot
         nw, nh = max(1, int(im.width * scale)), max(1, int(im.height * scale))
         im2 = im.resize((nw, nh), Image.Resampling.LANCZOS)
         px = int(x0 + (iw - nw) / 2)
@@ -1564,13 +1573,38 @@ def gdi_print(plans, opts, printer, duplex, copies, progress=None, color=None,
 # ---------------------------------------------------------------- 预览窗口
 
 class PagePreviewWindow(tk.Toplevel):
-    def __init__(self, master, items, opts, side):
+    def __init__(self, master, items, opts, side, on_confirm=None):
         super().__init__(master)
         self.title('排版预览')
         self.geometry('760x900')
+        self._job = None            # 先初始化: 画布 Configure 事件早于其他属性
         self._pages = []          # 渲染好的 PIL 页面(渲染一次, 显示时缩放)
         self._labels = []
-        self._job = None
+        self._plans = []
+        self._opts = opts
+        self._items = items
+        self._on_confirm = on_confirm
+        # 快照: 关闭未确认时回退到打开前的旋转状态
+        self._snapshot = {id(it): int(getattr(it, 'user_rot', 0) or 0)
+                          for it in items}
+        self._confirmed = False
+
+        # 顶部工具条: 确认/撤销(虚拟控件, 不会被打印)
+        bar = tk.Frame(self, bg='#3a3a3a')
+        bar.pack(side='top', fill='x')
+        tk.Label(bar, text='点图片右上角 ⟳ 旋转该张 (90°/次)', bg='#3a3a3a',
+                 fg='#ddd', font=('Microsoft YaHei UI', 10)).pack(
+            side='left', padx=8, pady=4)
+        tk.Button(bar, text='↺ 撤销全部', command=self._revert_all,
+                  bg='#555', fg='white', relief='flat',
+                  activebackground='#777', activeforeground='white',
+                  font=('Microsoft YaHei UI', 10)).pack(side='right',
+                                                        padx=6, pady=3)
+        tk.Button(bar, text='✓ 确认调整', command=self._confirm_adjust,
+                  bg='#1677ff', fg='white', relief='flat',
+                  activebackground='#3d8bff', activeforeground='white',
+                  font=('Microsoft YaHei UI', 10, 'bold')).pack(
+            side='right', padx=6, pady=3)
 
         canvas = tk.Canvas(self, highlightthickness=0, bg='#6b6b6b')
         self._canvas = canvas
@@ -1592,6 +1626,8 @@ class PagePreviewWindow(tk.Toplevel):
         self.update()
 
         plans = plan_pages(items, opts)
+        self._plans = plans
+        pw_full, ph_full = self._page_px()
         for k, plan in enumerate(plans):
             if side == '双面':
                 cap = '第 %d 张纸 · %s' % (k // 2 + 1,
@@ -1608,8 +1644,65 @@ class PagePreviewWindow(tk.Toplevel):
             lbl = tk.Label(frame, bg='#5a5a5a')
             lbl.pack(pady=(0, 10))
             self._labels.append(lbl)
+            # 每格右上角虚拟旋转按钮(仅预览 UI, 不会被打印)
+            r, c, chunk = plan
+            m = mm2px(opts['margin'], 100)
+            g = mm2px(opts['gap'], 100)
+            cw = (pw_full - 2 * m - (c - 1) * g) / c
+            chh = (ph_full - 2 * m - (r - 1) * g) / r
+            for idx, it in enumerate(chunk):
+                rr, cc = divmod(idx, c)
+                x1 = m + cc * (cw + g) + cw
+                y0 = m + rr * (chh + g)
+                btn = tk.Button(lbl, text='⟳', width=2,
+                                command=lambda a=it, pi=k: self._rotate_item(
+                                    a, pi),
+                                bg='#ffffff', fg='#c0392b', relief='raised',
+                                font=('Microsoft YaHei UI', 9, 'bold'),
+                                cursor='hand2')
+                btn.place(relx=min(0.98, x1 / pw_full), rely=y0 / ph_full,
+                          anchor='ne', x=-3, y=3)
         tk.Label(frame, text='共 %d 页' % len(plans), bg='#5a5a5a',
                  fg='white').pack(fill='x', pady=8)
+
+    def _page_px(self):
+        """预览渲染 dpi(100) 下的纸张像素尺寸(含方向)"""
+        pw, ph = PAPERS_MM[self._opts['paper']]
+        if self._opts.get('direction', '纵向') == '横向':
+            pw, ph = ph, pw
+        return mm2px(pw, 100), mm2px(ph, 100)
+
+    def _rotate_item(self, item, page_idx):
+        """点 ⟳: 该张图顺时针转 90°, 单页重渲染(手动旋转优先于智能旋转)"""
+        item.user_rot = (int(getattr(item, 'user_rot', 0) or 0) + 90) % 360
+        self._pages[page_idx] = render_page(self._plans[page_idx],
+                                            self._opts, 100)
+        self._display_pages()
+
+    def _confirm_adjust(self):
+        """确认调整: 保留当前旋转状态, 打印/导出按此预览执行"""
+        self._confirmed = True
+        if self._on_confirm:
+            try:
+                self._on_confirm()
+            except Exception:
+                pass
+        self.destroy()
+
+    def _revert_all(self):
+        for it in self._items:
+            it.user_rot = self._snapshot.get(id(it), 0)
+        for k, plan in enumerate(self._plans):
+            self._pages[k] = render_page(plan, self._opts, 100)
+        self._display_pages()
+
+    def _on_close(self):
+        """未确认直接关闭: 回退全部手动旋转"""
+        if not self._confirmed:
+            for it in self._items:
+                if id(it) in self._snapshot:
+                    it.user_rot = self._snapshot[id(it)]
+        self.destroy()
 
     def _display_pages(self):
         """页面按当前窗口宽度等比缩放并居中显示(四周留白)"""
@@ -2835,8 +2928,10 @@ class App:
             self._status('正在渲染排版预览 ...')
             self.root.config(cursor='watch')
             self.root.update()
-            PagePreviewWindow(self.root, items, self.current_opts(),
-                              self.side_var.get())
+            PagePreviewWindow(
+                self.root, items, self.current_opts(), self.side_var.get(),
+                on_confirm=lambda: self._status(
+                    '排版调整已确认: 打印/导出将按当前预览效果执行'))
             self._status('排版预览已打开')
         except Exception:
             messagebox.showerror('预览失败', traceback.format_exc())
