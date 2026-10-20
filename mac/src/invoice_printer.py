@@ -13,7 +13,9 @@
 
 import io
 import ctypes
+import math
 import json
+import base64
 import hashlib
 import os
 import re
@@ -123,7 +125,7 @@ def _clipboard_files():
     return out
 
 APP_TITLE = '发票打印助手'
-APP_VERSION = 'v4.0'
+APP_VERSION = 'v4.2'
 PRINT_DPI = 300    # 送打印机时页面渲染精度
 PDF_DPI = 200      # 导出 PDF 的精度(体积/清晰度折中)
 PREVIEW_DPI = 60   # 预览窗口精度
@@ -1572,6 +1574,40 @@ def gdi_print(plans, opts, printer, duplex, copies, progress=None, color=None,
 
 # ---------------------------------------------------------------- 预览窗口
 
+_ROT_ICON_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAABoAAAAaCAYAAACpSkzOAAAEVElEQVR42pVWwUsbTxh9O7sb"
+    "NVGrqdCDh1aKGGwVEWMRDLSCV2/2oK0He+h/IBb04D/QQgwKgnrSix70XsqveGigtVUDUnpo"
+    "Tw1oEMQSwd2deb+DziRr0qIfLCG7M9+bN/O97w1IJnktPM8jSW5sbDAej/P79+/8Wyil6Ps+"
+    "lVIVn3Q6kp0OrkUQBHBdFzs7O3j16hXOzs6wvb2NyclJ/PjxA6enpwCAlpYW3L9/H/fu3YPj"
+    "XKaRUsK2bVSNcka+75Mk9/b2eOfOHQKgZVmsr69nU1MTAYSehoYGplIpptNpnpyckCSllJpd"
+    "iJEBklKSJH/+/MnW1lYCoG3bocS2bTMSiTASiVR8a21t5eLiotk3KWUlkAYpFApMJBIVIJZl"
+    "VbDRTyQSoeu65v/o6CiLxeLV8akSkOd5SSklj46O2NPTQwCsqamhbdsUQhgQx3GYSCQ4NDTE"
+    "oaEhdnR0UAgRYus4DgHw2bNnPD8/V0opSikvgU5PT5Mk+fnzZzY3N1ddtW3bbGpqYj6fN1sT"
+    "BAFzuRynpqYYi8UIgEIIw+7Fixfqalz4jEjyz58/zGazzGQyfPnyJR8/fsyamhoDuLq6Sikl"
+    "Ly4uQnWcy+XY3d1tFnUFpjY3N0nSy+fzJaAqOqBSir9+/eL29jZnZ2f57du3UGVJKY3mCoUC"
+    "Ozo6CICu69KyLNXe3s6Li4sSoyAITGLP8+j7PvW7m4QG293dpeu6FELQtm0FgJubm6ViIFmx"
+    "HRpYSskgCOj7vpFAtdAanJiY0AWlLMvi8+fPS4yWl5f54MED9vT0MJvNslxXN40gCKiU4ocP"
+    "H/RZKQBsa2u7PKO5ublkbW2tOfC+vj7D5Dahz7hQKLCxsZEAFADW1tZ6IyMjnQCQFELQcRwK"
+    "IZhIJKoWxk2BPM/jw4cPCUBd6cwD0Cnu3r0LIQSUUlBK6f4X+r1NKKUQBIGZL4RAPB6HGB8f"
+    "RywWMyC/f//GycnJrQH0oo6Pj3F0dGTe1dfX4/Xr10CxWEw+evTItBkA3NraMj5z09CetL6+"
+    "rrWkALCrq8sj2Smi0SgGBwdhWZbxkkwmA8uybs3KsiwsLCwAAIQQAICnT5+W/GhnZ8f0Kt21"
+    "19bW+Dd9XQ89ZmVlxbQhIYQCwE+fPl3qqFgsJkkylUqZ7RNCMBaL8eN/H42mtGCVUqb8y0X8"
+    "/v17RqNR6goGoIaHh0nSOzs7K3Xvr1+/Gka6/UejUS4tLf2TjZSSmUyGWos6h+M46uDgoARU"
+    "3uvevn0bYqVF3N/fz/n5ee7u7jKfzzOfz/PLly989+4de3t7zbgyNpxPz6urIgnbhAabnp42"
+    "Ex3HqbDsWCxm/Kea6QHgzMwMSaqrba30Iw2WTqdZ3pZc19WtP2Tv1208Go2ae4Pv+9UvJ9fB"
+    "crkcR0dHQ8anAa7fIerq6jg2NsbDw8PyHP8GKgfTRfLmzRs+efKE8XicQggKIRiPxzkwMMCZ"
+    "mRnu7+9XmxsC+h8Ml1wSFF6UMgAAAABJRU5ErkJggg=="
+)
+
+
+def _make_rotate_icon(size=26):
+    """旋转按钮图标: 用户提供的回转箭头(嵌入 base64, 不依赖系统字体)"""
+    img = Image.open(io.BytesIO(base64.b64decode(_ROT_ICON_B64)))
+    if size != img.width:
+        img = img.resize((size, size), Image.Resampling.LANCZOS)
+    return ImageTk.PhotoImage(img)
+
+
 class PagePreviewWindow(tk.Toplevel):
     def __init__(self, master, items, opts, side, on_confirm=None):
         super().__init__(master)
@@ -1588,11 +1624,12 @@ class PagePreviewWindow(tk.Toplevel):
         self._snapshot = {id(it): int(getattr(it, 'user_rot', 0) or 0)
                           for it in items}
         self._confirmed = False
+        self._rot_icon = _make_rotate_icon(22)   # 图标只建一次, 各按钮共用
 
         # 顶部工具条: 确认/撤销(虚拟控件, 不会被打印)
         bar = tk.Frame(self, bg='#3a3a3a')
         bar.pack(side='top', fill='x')
-        tk.Label(bar, text='点图片右上角 ⟳ 旋转该张 (90°/次)', bg='#3a3a3a',
+        tk.Label(bar, text='点发票右上角的旋转小按钮可手动旋转 (每次 90°)', bg='#3a3a3a',
                  fg='#ddd', font=('Microsoft YaHei UI', 10)).pack(
             side='left', padx=8, pady=4)
         tk.Button(bar, text='↺ 撤销全部', command=self._revert_all,
@@ -1641,27 +1678,12 @@ class PagePreviewWindow(tk.Toplevel):
                 fill='x', pady=(10, 2))
             page = render_page(plan, opts, 100)   # 高清渲染一次, 显示时再缩放
             self._pages.append(page)
-            lbl = tk.Label(frame, bg='#5a5a5a')
-            lbl.pack(pady=(0, 10))
-            self._labels.append(lbl)
-            # 每格右上角虚拟旋转按钮(仅预览 UI, 不会被打印)
-            r, c, chunk = plan
-            m = mm2px(opts['margin'], 100)
-            g = mm2px(opts['gap'], 100)
-            cw = (pw_full - 2 * m - (c - 1) * g) / c
-            chh = (ph_full - 2 * m - (r - 1) * g) / r
-            for idx, it in enumerate(chunk):
-                rr, cc = divmod(idx, c)
-                x1 = m + cc * (cw + g) + cw
-                y0 = m + rr * (chh + g)
-                btn = tk.Button(lbl, text='⟳', width=2,
-                                command=lambda a=it, pi=k: self._rotate_item(
-                                    a, pi),
-                                bg='#ffffff', fg='#c0392b', relief='raised',
-                                font=('Microsoft YaHei UI', 9, 'bold'),
-                                cursor='hand2')
-                btn.place(relx=min(0.98, x1 / pw_full), rely=y0 / ph_full,
-                          anchor='ne', x=-3, y=3)
+            # 用 Canvas 而非 Label: 旋转图标作为画布元素永远置顶,
+            # 不会出现 Label 换图后按钮需要鼠标悬停才重绘的丢失问题
+            cv = tk.Canvas(frame, width=10, height=10,
+                           highlightthickness=0, bg='#5a5a5a')
+            cv.pack(pady=(0, 10))
+            self._labels.append(cv)
         tk.Label(frame, text='共 %d 页' % len(plans), bg='#5a5a5a',
                  fg='white').pack(fill='x', pady=8)
 
@@ -1714,14 +1736,39 @@ class PagePreviewWindow(tk.Toplevel):
                 self._loading.destroy()
                 self._loading = None
             cw = max(self._canvas.winfo_width() - 40, 200)  # 两侧各留 20px
-            for page, lbl in zip(self._pages, self._labels):
+            for k, page in enumerate(self._pages):
+                cv = self._labels[k]
                 scale = min(cw / page.width, 1.0)
                 nw = max(1, int(page.width * scale))
                 nh = max(1, int(page.height * scale))
+                cv.configure(width=nw, height=nh)
+                cv.delete('all')
                 ph = ImageTk.PhotoImage(
                     page.resize((nw, nh), Image.Resampling.LANCZOS))
-                lbl.configure(image=ph)
-                lbl.image = ph
+                cv.image = ph                      # 防止 PhotoImage 被回收
+                cv.create_image(nw // 2, nh // 2, image=ph)
+                # 每格右上角旋转图标(画布元素, 永远置顶可见; 虚拟不打印)
+                plan = self._plans[k]
+                r, c, chunk = plan
+                pw_full, ph_full = self._page_px()
+                m = mm2px(self._opts['margin'], 100)
+                g = mm2px(self._opts['gap'], 100)
+                cwid = (pw_full - 2 * m - (c - 1) * g) / c
+                chh = (ph_full - 2 * m - (r - 1) * g) / r
+                for idx, it in enumerate(chunk):
+                    rr, cc = divmod(idx, c)
+                    x1 = m + cc * (cwid + g) + cwid
+                    y0 = m + rr * (chh + g)
+                    tag = 'rot_%d_%d' % (k, idx)
+                    ic = cv.create_image(x1 * scale - 5, y0 * scale + 5,
+                                         image=self._rot_icon, anchor='ne',
+                                         tags=(tag,))
+                    cv.tag_bind(ic, '<Button-1>',
+                                lambda e, a=it, pi=k: self._rotate_item(a, pi))
+                    cv.tag_bind(ic, '<Enter>',
+                                lambda e: cv.configure(cursor='hand2'))
+                    cv.tag_bind(ic, '<Leave>',
+                                lambda e: cv.configure(cursor=''))
         except Exception:
             pass
 
